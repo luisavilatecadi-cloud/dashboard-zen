@@ -3,12 +3,14 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import requests
+from io import BytesIO
 
 # 1. Configuração da Página
 st.set_page_config(page_title="TECADI - Acuracidade ZEN", page_icon="🎯", layout="wide")
 
 # ---------------------------------------------------------
-# 2. ESTILO VISUAL TECADI (CSS Customizado)
+# 2. ESTILO VISUAL TECADI
 # ---------------------------------------------------------
 AZUL_ESCURO, AZUL_TECADI, VERMELHO_FALTA, VERDE_SOBRA = "#133A68", "#1D569B", "#D32F2F", "#2E7D32"
 
@@ -33,8 +35,6 @@ st.markdown(f"""
         color: {AZUL_ESCURO} !important;
     }}
     
-    [data-testid="stSidebar"] svg {{ fill: white !important; }}
-
     [data-testid="stMetric"] {{ 
         background-color: #F8FAFC !important; 
         border-radius: 12px !important; 
@@ -46,35 +46,48 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. MOTOR DE DADOS
+# 3. MOTOR DE DADOS (LEITURA DO SHAREPOINT)
 # ---------------------------------------------------------
-@st.cache_data
+
+@st.cache_data(ttl=3600)
 def load_data():
-    f_kardex, f_custos = "Kardex (30).xlsx", "CMP.xlsx"
-    if not os.path.exists(f_kardex): return None, f"Arquivo '{f_kardex}' não encontrado."
+    # Links fornecidos convertidos para download direto
+    url_cmp = "https://tecadi-my.sharepoint.com/:x:/g/personal/luis_avila_tecadi_com_br/IQBpY04fnUXVQanV1HmDAdMsARKUwfgvQAXZZYf0rWhv2t0?download=1"
+    url_kardex = "https://tecadi-my.sharepoint.com/:x:/g/personal/luis_avila_tecadi_com_br/IQD-_9KS9a3XQKv8SYwEidTUASpjTiD5xu0SKD5sj0nFqro?download=1"
     
     try:
-        df_raw = pd.read_excel(f_kardex, engine='openpyxl')
-        df_c = pd.read_excel(f_custos, engine='openpyxl').drop_duplicates(subset=['PRODUTO'], keep='first') if os.path.exists(f_custos) else pd.DataFrame(columns=['PRODUTO', 'CUSTO_MEDIO_POND'])
+        # Download Kardex
+        resp_k = requests.get(url_kardex)
+        df_raw = pd.read_excel(BytesIO(resp_k.content), engine='openpyxl')
+        
+        # Download CMP
+        resp_c = requests.get(url_cmp)
+        df_c = pd.read_excel(BytesIO(resp_c.content), engine='openpyxl').drop_duplicates(subset=['PRODUTO'], keep='first')
 
+        # Filtros de inventário
         if 'Observacao' in df_raw.columns:
             df_raw = df_raw[~df_raw['Observacao'].fillna('').str.lower().str.contains('excluir')]
             df_raw = df_raw[df_raw['Observacao'].fillna('').str.lower().str.contains('inv')]
 
+        # Tratamento de Datas
         df_raw['Data_Completa'] = pd.to_datetime(df_raw['Data'], dayfirst=True)
         df_raw['Data_Dia'] = df_raw['Data_Completa'].dt.normalize()
         df_raw['Somente_Data'] = df_raw['Data_Completa'].dt.strftime('%d/%m/%Y')
         
+        # Qtd com sinal
         df_raw['Qtd_Sinal'] = df_raw.apply(
             lambda x: x['Quantidade'] if str(x['Tipo Mov']).upper() == 'ENTRADA' else -x['Quantidade'], axis=1
         )
 
+        # Agrupamento
         df_net = df_raw.groupby(['Somente_Data', 'Data_Dia', 'Produto', 'Localizacao']).agg({
             'Qtd_Sinal': 'sum',
             'Usuario': 'first'
         }).reset_index()
 
         df_ajustes = df_net[df_net['Qtd_Sinal'] != 0].copy()
+        
+        # Merge com Custo
         df_final = pd.merge(df_ajustes, df_c[['PRODUTO', 'CUSTO_MEDIO_POND']], left_on='Produto', right_on='PRODUTO', how='left')
         
         df_final['Custo_Unit'] = pd.to_numeric(df_final['CUSTO_MEDIO_POND'], errors='coerce').fillna(0)
@@ -83,18 +96,19 @@ def load_data():
         df_final['Mes_Ano'] = df_final['Data_Dia'].dt.strftime('%m/%Y')
         
         return df_final, None
-    except Exception as e: return None, str(e)
+    except Exception as e: 
+        return None, f"Erro ao acessar SharePoint: {str(e)}"
 
 df, erro = load_data()
 
 if erro:
-    st.error(f"❌ Erro ao processar: {erro}")
+    st.error(f"❌ {erro}")
 elif df is not None:
     # --- SIDEBAR ---
     st.sidebar.markdown("### ⚙️ Filtros Gerais")
     meses_disponiveis = df.sort_values('Mes_Ano_Sort', ascending=False)['Mes_Ano'].unique()
     mes_filt = st.sidebar.multiselect("📅 Mês/Ano", options=meses_disponiveis)
-    prod_global_filt = st.sidebar.multiselect("📦 Produto (Global)", options=sorted(df['Produto'].unique()))
+    prod_global_filt = st.sidebar.multiselect("📦 Produto", options=sorted(df['Produto'].unique()))
 
     df_f = df.copy()
     if mes_filt: df_f = df_f[df_f['Mes_Ano'].isin(mes_filt)]
@@ -114,7 +128,6 @@ elif df is not None:
         m2.metric("Faltas Financeiras", f"R$ {abs(v_falta):,.2f}")
         m3.metric("Resultado Líquido", f"R$ {total_liq:,.2f}")
 
-        # Gráfico 1: Acumulado (REVERTIDO PARA CORES ORIGINAIS DINÂMICAS)
         st.subheader("📈 Histórico de Impacto Acumulado")
         df_hist = df_f.groupby('Data_Dia')['Valor (R$)'].sum().reset_index().sort_values('Data_Dia')
         df_hist['Acumulado'] = df_hist['Valor (R$)'].cumsum()
@@ -132,88 +145,48 @@ elif df is not None:
         fig_evolucao.update_layout(xaxis_title="Data", yaxis_title="Acumulado (R$)", hovermode="x unified")
         st.plotly_chart(fig_evolucao, use_container_width=True)
 
-        # Gráfico 2: Resumo Financeiro Mensal (Ajuste Azul Tecadi + Fonte)
-        st.subheader("🗓️ Resumo Financeiro por Mês")
-        df_mensal = df_f.groupby(['Mes_Ano_Sort', 'Mes_Ano'])['Valor (R$)'].sum().reset_index().sort_values('Mes_Ano_Sort')
-        
-        fig_mensal = px.bar(
-            df_mensal, x='Mes_Ano', y='Valor (R$)',
-            text_auto='.2s',
-            color_discrete_sequence=[AZUL_TECADI]
-        )
-        fig_mensal.update_layout(
-            xaxis_title="Mês/Ano", yaxis_title="Saldo Mensal (R$)",
-            font=dict(size=14),
-            showlegend=False
-        )
-        st.plotly_chart(fig_mensal, use_container_width=True)
-
-   # --- ABA 2: RANKINGS ---
+    # --- ABA 2: RANKINGS ---
     with aba_rankings:
-        st.markdown("### 🚨 Rankings de Impacto de Inventário")
-        
         df_resumo = df_f.groupby('Produto').agg({'Qtd_Sinal': 'sum', 'Valor (R$)': 'sum'}).reset_index()
         
-        # Função para estilizar os gráficos conforme solicitado
         def style_ranking_charts(fig):
             fig.update_traces(
                 textposition='inside', 
-                textfont=dict(
-                    color="white", 
-                    size=14,          # Fonte ajustada (um pouco menor que a anterior)
-                    family="Arial"    # Fonte padrão limpa
-                ),
+                textfont=dict(color="white", size=14, family="Arial"),
                 insidetextanchor='middle'
             )
-            fig.update_layout(
-                showlegend=False,
-                height=550,           # Altura para manter barras com boa espessura
-                margin=dict(l=20, r=20, t=50, b=20),
-                yaxis={'categoryorder':'total ascending'}
-            )
+            fig.update_layout(showlegend=False, height=600, margin=dict(l=20, r=20, t=50, b=20), yaxis={'categoryorder':'total ascending'})
             return fig
 
-        # Seção de Faltas
         st.subheader("📉 Top 15 Faltas")
         c1, c2 = st.columns(2)
         with c1:
             top_f_fin = df_resumo.sort_values('Valor (R$)', ascending=True).head(15)
-            fig1 = px.bar(top_f_fin, x='Valor (R$)', y='Produto', orientation='h', 
-                          title="Financeiro (R$)", text_auto='.2s',
-                          color_discrete_sequence=[AZUL_TECADI])
+            fig1 = px.bar(top_f_fin, x='Valor (R$)', y='Produto', orientation='h', title="Financeiro (R$)", text_auto='.2s', color_discrete_sequence=[AZUL_TECADI])
             st.plotly_chart(style_ranking_charts(fig1), use_container_width=True)
-            
         with c2:
             top_f_qtd = df_resumo.sort_values('Qtd_Sinal', ascending=True).head(15)
-            fig2 = px.bar(top_f_qtd, x='Qtd_Sinal', y='Produto', orientation='h', 
-                          title="Quantidade (PÇ)", text_auto='.0f',
-                          color_discrete_sequence=[AZUL_TECADI])
+            fig2 = px.bar(top_f_qtd, x='Qtd_Sinal', y='Produto', orientation='h', title="Quantidade (PÇ)", text_auto='.0f', color_discrete_sequence=[AZUL_TECADI])
             st.plotly_chart(style_ranking_charts(fig2), use_container_width=True)
 
         st.divider()
-
-        # Seção de Sobras
         st.subheader("📈 Top 15 Sobras")
         c3, c4 = st.columns(2)
         with c3:
             top_s_fin = df_resumo.sort_values('Valor (R$)', ascending=False).head(15)
-            fig3 = px.bar(top_s_fin, x='Valor (R$)', y='Produto', orientation='h', 
-                          title="Financeiro (R$)", text_auto='.2s',
-                          color_discrete_sequence=[AZUL_TECADI])
+            fig3 = px.bar(top_s_fin, x='Valor (R$)', y='Produto', orientation='h', title="Financeiro (R$)", text_auto='.2s', color_discrete_sequence=[AZUL_TECADI])
             st.plotly_chart(style_ranking_charts(fig3), use_container_width=True)
-            
         with c4:
             top_s_qtd = df_resumo.sort_values('Qtd_Sinal', ascending=False).head(15)
-            fig4 = px.bar(top_s_qtd, x='Qtd_Sinal', y='Produto', orientation='h', 
-                          title="Quantidade (PÇ)", text_auto='.0f',
-                          color_discrete_sequence=[AZUL_TECADI])
+            fig4 = px.bar(top_s_qtd, x='Qtd_Sinal', y='Produto', orientation='h', title="Quantidade (PÇ)", text_auto='.0f', color_discrete_sequence=[AZUL_TECADI])
             st.plotly_chart(style_ranking_charts(fig4), use_container_width=True)
+
     # --- ABA 3: LOGS ---
     with aba_logs:
         st.subheader("📋 Detalhamento de Movimentações")
         c1, c2, c3 = st.columns(3)
-        with c1: log_local = st.multiselect("📍 Localização", options=sorted(df_f['Localizacao'].unique()))
-        with c2: log_prod = st.multiselect("📦 Produto", options=sorted(df_f['Produto'].unique()))
+        with c1: log_local = st.multiselect("📍 Localização", options=sorted(df_f['Localizacao'].unique()), key="log_loc")
+        with c2: log_prod = st.multiselect("📦 Produto", options=sorted(df_f['Produto'].unique()), key="log_prod")
         with c3: log_data = st.date_input("📅 Intervalo", value=(df_f['Data_Dia'].min(), df_f['Data_Dia'].max()))
 
         df_l = df_f.copy()
@@ -222,18 +195,12 @@ elif df is not None:
         if isinstance(log_data, tuple) and len(log_data) == 2:
             df_l = df_l[(df_l['Data_Dia'].dt.date >= log_data[0]) & (df_l['Data_Dia'].dt.date <= log_data[1])]
             
-        # Formatação para exibição (REMOVIDO HORA)
-        df_display = df_l.copy()
-        df_display = df_display[['Somente_Data', 'Localizacao', 'Produto', 'Qtd_Sinal', 'Custo_Unit', 'Valor (R$)', 'Usuario']]
+        df_display = df_l[['Somente_Data', 'Localizacao', 'Produto', 'Qtd_Sinal', 'Custo_Unit', 'Valor (R$)', 'Usuario']].copy()
         df_display.columns = ['Data', 'Localização', 'Produto', 'Qtd', 'Custo Unit.', 'Valor Total', 'Usuário']
 
-        st.dataframe(
-            df_display.sort_values('Data', ascending=False),
-            use_container_width=True, 
-            hide_index=True,
+        st.dataframe(df_display.sort_values('Data', ascending=False), use_container_width=True, hide_index=True,
             column_config={
                 "Custo Unit.": st.column_config.NumberColumn("Custo Unit.", format="R$ %.2f"),
                 "Valor Total": st.column_config.NumberColumn("Valor Total", format="R$ %.2f"),
                 "Qtd": st.column_config.NumberColumn("Qtd", format="%d")
-            }
-        )
+            })
