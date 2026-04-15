@@ -22,7 +22,7 @@ st.markdown("""
 
     /* Título em Azul Claro TECADI */
     .hero-title {
-        color: #009FE3; /* Alterado para Azul Claro */
+        color: #009FE3; 
         font-size: 50px;
         font-weight: 700;
         margin-bottom: 0px;
@@ -59,10 +59,9 @@ st.markdown("""
         height: 240px;
         display: flex;
         flex-direction: column;
-        position: relative; /* Necessário para o link absoluto interno */
+        position: relative; 
     }
 
-    /* O "truque" para o link ocupar o card inteiro */
     .full-card-link {
         position: absolute;
         width: 100%;
@@ -153,6 +152,18 @@ with col2:
             <div class="card-content">
                 <div class="card-title-text">Acuracidade de Estoque</div>
                 <div class="card-desc">Balanço de inventário, sobras, faltas e ajustes sistêmicos.</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    st.markdown(f"""
+        <div class="netflix-card">
+            <a href="https://acuracidade-zen-pulos.streamlit.app/" target="_self" class="full-card-link"></a>
+            <div class="card-banner">📊</div>
+            <div class="card-content">
+                <div class="card-title-text">Análise de Pulos</div>
+                <div class="card-desc">Monitoramento de produtividade e recorrência de endereços (Pulos Reais).</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
