@@ -7,20 +7,16 @@ st.set_page_config(
     layout="wide"
 )
 
-# 2. Estilização Estilo "Netflix Corporativo" Ajustada
+# 2. Estilização Estilo "Netflix Corporativo"
 st.markdown("""
     <style>
-    /* Fundo Azul Marinho Profundo */
     .stApp {
         background-color: #050C16;
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
     
-    .logo-container {
-        padding: 20px 0;
-    }
+    .logo-container { padding: 20px 0; }
 
-    /* Título em Azul Claro TECADI */
     .hero-title {
         color: #009FE3; 
         font-size: 50px;
@@ -48,7 +44,6 @@ st.markdown("""
         padding-left: 15px;
     }
 
-    /* Estrutura do Card Clicável */
     .netflix-card {
         background-color: #0B1E33;
         border-radius: 8px;
@@ -62,6 +57,7 @@ st.markdown("""
         position: relative; 
     }
 
+    /* Target _blank evita o loop de redirecionamento do Streamlit Cloud */
     .full-card-link {
         position: absolute;
         width: 100%;
@@ -135,7 +131,7 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.markdown(f"""
         <div class="netflix-card">
-            <a href="https://acuracidade-zen-cortes-de-pedido.streamlit.app/" target="_self" class="full-card-link"></a>
+            <a href="https://acuracidade-zen-cortes-de-pedido.streamlit.app/" target="_blank" class="full-card-link"></a>
             <div class="card-banner">✂️</div>
             <div class="card-content">
                 <div class="card-title-text">Cortes de Pedido</div>
@@ -147,7 +143,7 @@ with col1:
 with col2:
     st.markdown(f"""
         <div class="netflix-card">
-            <a href="https://acuracidade-zen-ajuste-de-inventario.streamlit.app/" target="_self" class="full-card-link"></a>
+            <a href="https://acuracidade-zen-ajuste-de-inventario.streamlit.app/" target="_blank" class="full-card-link"></a>
             <div class="card-banner">🎯</div>
             <div class="card-content">
                 <div class="card-title-text">Acuracidade de Estoque</div>
@@ -159,7 +155,7 @@ with col2:
 with col3:
     st.markdown(f"""
         <div class="netflix-card">
-            <a href="https://acuracidade-zen-pulos.streamlit.app/" target="_self" class="full-card-link"></a>
+            <a href="https://acuracidade-zen-pulos.streamlit.app/" target="_blank" class="full-card-link"></a>
             <div class="card-banner">📊</div>
             <div class="card-content">
                 <div class="card-title-text">Análise de Pulos</div>
