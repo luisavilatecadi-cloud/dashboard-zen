@@ -5,6 +5,8 @@ import plotly.graph_objects as go
 from datetime import datetime
 import os
 import re
+import requests
+import io
 
 # 1. Configuração da Página
 st.set_page_config(page_title="TECADI - Dashboard Logístico", page_icon="📦", layout="wide")
@@ -24,7 +26,9 @@ def formatar_br(valor):
 
 # Função para converter link do SharePoint em download direto
 def link_download_direto(url):
-    return url.replace("?e=", "&download=1&e=")
+    if "?e=" in url:
+        return url.replace("?e=", "&download=1&e=")
+    return url + "&download=1"
 
 st.markdown(f"""
     <style>
@@ -38,17 +42,21 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 3. MOTOR DE DADOS
+# 3. MOTOR DE DADOS (CORRIGIDO)
 # ---------------------------------------------------------
-@st.cache_data(ttl=600) # Atualiza o cache a cada 10 minutos
+@st.cache_data(ttl=1)
 def load_data():
-    # Links fornecidos convertidos para download direto
     url_p = link_download_direto("https://tecadi-my.sharepoint.com/:x:/g/personal/anderson_roza_tecadi_com_br/IQBS8GhxPJ3wRYIodpxrwD_5AU15pbYrDvzMKaY1kw161vg?e=BPvvkp")
     url_f = link_download_direto("https://tecadi-my.sharepoint.com/:x:/g/personal/anderson_roza_tecadi_com_br/IQCpXS7IqaNPRpmwTx1-FYuKAWLu5pqlVkA1hpUD-mkCcno?e=c94Til")
     
     try:
-        df_p = pd.read_excel(url_p)
-        df_f = pd.read_excel(url_f)
+        # Baixando os arquivos via requests para evitar erro de formato
+        res_p = requests.get(url_p)
+        res_f = requests.get(url_f)
+        
+        # Lendo os bytes com o engine openpyxl explicitamente
+        df_p = pd.read_excel(io.BytesIO(res_p.content), engine='openpyxl')
+        df_f = pd.read_excel(io.BytesIO(res_f.content), engine='openpyxl')
         
         # Tratamento de Datas - Finalizados
         df_f['DT_CRIACAO'] = pd.to_datetime(df_f['Criado em'].astype(str).str.split('-').str[0], dayfirst=True, errors='coerce')
@@ -57,8 +65,8 @@ def load_data():
         # Tratamento de Datas - Pendentes
         df_p['DT_CRIACAO'] = pd.to_datetime(df_p['Criado em'].astype(str).str.split('-').str[0], dayfirst=True, errors='coerce')
         
-        # Cálculo de SLA (Usando a data atual real ou a fixa do projeto)
-        hoje = pd.to_datetime(datetime.now().date()) # Para produção, usamos o dia de hoje
+        # Cálculo de SLA (Usando data atual)
+        hoje = pd.to_datetime(datetime.now().date())
         
         df_f['Dias_Entrega'] = (df_f['DT_FIM'] - df_f['DT_CRIACAO']).dt.days
         df_f['Status_SLA'] = df_f['Dias_Entrega'].apply(lambda x: 'No Prazo' if x <= 2 else 'Fora do Prazo')
@@ -76,35 +84,28 @@ if erro:
     st.error(erro)
     st.stop()
 
-# ---------------------------------------------------------
-# 4. SIDEBAR
-# ---------------------------------------------------------
+# --- Restante do código (Sidebar e Abas) permanece o mesmo ---
+# (Inserir aqui o código das abas enviado anteriormente)
+
 with st.sidebar:
     st.image("https://tecadi.com.br/wp-content/uploads/2024/01/LOGO-HORIZONTAL_BRANCA_p.png.webp", width=200)
     st.markdown("---")
+    if st.button("🔄 Forçar Atualização"):
+        st.cache_data.clear()
+        st.rerun()
     
     # Filtro de Data
     min_d = df_f['DT_FIM'].min().date() if not df_f['DT_FIM'].isnull().all() else datetime.now().date()
     max_d = df_f['DT_FIM'].max().date() if not df_f['DT_FIM'].isnull().all() else datetime.now().date()
-    
     date_range = st.date_input("📅 Período de Finalização", value=(min_d, max_d))
-    
     operadores = ["Todos"] + sorted(df_f['Finalizada por'].dropna().unique().tolist())
     op_filt = st.selectbox("👤 Operador", operadores)
 
-# Aplicar Filtros
 mask = (df_f['DT_FIM'].dt.date >= date_range[0]) & (df_f['DT_FIM'].dt.date <= date_range[1])
-if op_filt != "Todos": 
-    mask &= (df_f['Finalizada por'] == op_filt)
-
+if op_filt != "Todos": mask &= (df_f['Finalizada por'] == op_filt)
 df_f_filtered = df_f[mask]
 
-# ---------------------------------------------------------
-# 5. DASHBOARD
-# ---------------------------------------------------------
 st.markdown('<div class="dash-header"><div class="dash-title">Gestão de Picking & Packing</div></div>', unsafe_allow_html=True)
-
-# Métricas Principais
 m1, m2, m3, m4 = st.columns(4)
 m1.metric("Peças Montadas", formatar_br(df_f_filtered['Peças montadas'].sum()))
 m2.metric("Linhas Montadas", formatar_br(df_f_filtered['Linhas montadas'].sum()))
@@ -113,7 +114,6 @@ m4.metric("SLA Médio (Dias)", f"{df_f_filtered['Dias_Entrega'].mean():.1f} d")
 
 tab1, tab2, tab3, tab4 = st.tabs(["📈 Produtividade", "📋 Pendentes Gerais", "⏱️ SLA Global D+2", "📦 SLA Foco Packing"])
 
-# ABA 1: PRODUTIVIDADE
 with tab1:
     df_evol = df_f_filtered.groupby('DT_FIM').agg({'Peças montadas': 'sum', 'Linhas montadas': 'sum', 'Código': 'nunique'}).reset_index().rename(columns={'Código': 'Pedidos'})
     fig = go.Figure()
@@ -121,7 +121,6 @@ with tab1:
     fig.add_trace(go.Bar(x=df_evol['DT_FIM'], y=df_evol['Linhas montadas'], name='Linhas', text=df_evol['Linhas montadas'], textposition='auto', marker_color=AZUL_TECADI, opacity=0.6))
     st.plotly_chart(fig, use_container_width=True)
 
-# ABA 2: PENDENTES GERAIS
 with tab2:
     df_p_summary = df_p.groupby('Tipo').agg({'Peças solicitadas': 'sum', 'Linhas totais': 'sum', 'Código': 'nunique'}).reset_index().rename(columns={'Código': 'Pedidos'})
     c_p1, c_p2, c_p3 = st.columns(3)
@@ -129,27 +128,20 @@ with tab2:
     c_p2.plotly_chart(px.bar(df_p_summary, x='Tipo', y='Linhas totais', title="Linhas Pendentes", color='Tipo', color_discrete_map={'Picking': AZUL_ESCURO, 'Packing': AZUL_CLARO_TECADI}), use_container_width=True)
     c_p3.plotly_chart(px.bar(df_p_summary, x='Tipo', y='Pedidos', title="Pedidos Pendentes", color='Tipo', color_discrete_map={'Picking': AZUL_ESCURO, 'Packing': AZUL_CLARO_TECADI}), use_container_width=True)
 
-# ABA 3: SLA GLOBAL
 with tab3:
     st.subheader("Performance de Entrega Global (Meta: D+2)")
     sla_counts = df_f_filtered['Status_SLA'].value_counts().reset_index()
     st.plotly_chart(px.pie(sla_counts, values='count', names='Status_SLA', hole=0.5, color='Status_SLA', color_discrete_map={'No Prazo': VERDE_SUCESSO, 'Fora do Prazo': VERMELHO_ALERTA}), use_container_width=True)
 
-# ABA 4: FOCO PACKING
 with tab4:
     st.subheader("Análise Detalhada SLA Packing (D+2)")
     df_pack_p = df_p[df_p['Tipo'] == 'Packing'].copy()
-    
-    # Formatação solicitada
     df_pack_p['Tarefa Packing'] = df_pack_p['Código'].astype(str).str.zfill(6)
     df_pack_p['Data Criação'] = df_pack_p['DT_CRIACAO'].dt.strftime('%d/%m/%Y')
-    
     def extrair_picking(obs):
         match = re.search(r'Trf\.Picking:(\d+)', str(obs))
         return match.group(1) if match else "N/A"
-    
     df_pack_p['Tarefa Picking'] = df_pack_p['Observações'].apply(extrair_picking)
-    
     c1, c2 = st.columns(2)
     with c1:
         fig_f = px.pie(df_f_filtered[df_f_filtered['Tipo'] == 'Packing'], names='Status_SLA', hole=0.4, title="Histórico Packing (Finalizados)", color_discrete_map={'No Prazo': VERDE_SUCESSO, 'Fora do Prazo': VERMELHO_ALERTA})
@@ -157,8 +149,6 @@ with tab4:
     with c2:
         fig_p = px.pie(df_pack_p, names='Status_SLA', hole=0.4, title="Situação Atual (Pendentes)", color_discrete_map={'Dentro do Prazo': AZUL_CLARO_TECADI, 'SLA Estourado': VERMELHO_ALERTA})
         st.plotly_chart(fig_p, use_container_width=True)
-    
     st.markdown("#### 🚨 Tabela de Prioridades: Packing Pendente")
     df_tabela = df_pack_p[['Tarefa Packing', 'Tarefa Picking', 'Status', 'Data Criação', 'Dias_Aberto', 'Peças solicitadas', 'Status_SLA']].sort_values('Dias_Aberto', ascending=False)
-    
     st.dataframe(df_tabela, use_container_width=True, hide_index=True)
