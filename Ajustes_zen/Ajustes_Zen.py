@@ -125,24 +125,19 @@ df, erro = load_data()
 if erro:
     st.error(f"❌ {erro}")
 elif df is not None:
-  # --- CONTEÚDO DA SIDEBAR ---
-with st.sidebar:
-    st.image("https://tecadi.com.br/wp-content/uploads/2024/01/LOGO-HORIZONTAL_BRANCA_p.png.webp", width=200)
-    
-    st.markdown("### 🔄 SINCRONIZAÇÃO")
-    if st.button("Forçar Atualização de Dados", use_container_width=True):
-        st.cache_data.clear()  # Limpa o cache de todas as funções
-        st.rerun()             # Reinicia a execução para baixar os dados novos
-    
-    st.markdown("---")
-    st.markdown("### ⚙️ PAINEL DE FILTROS")
-    
-    meses_disponiveis = df.sort_values('Mes_Ano_Sort', ascending=False)['Mes_Ano'].unique()
-    mes_filt = st.multiselect("📅 PERÍODO (MÊS/ANO)", options=meses_disponiveis)
-    
-    prod_global_filt = st.multiselect("📦 PRODUTO ESPECÍFICO", options=sorted(df['Produto'].unique()))
-    
-    st.markdown("---")
+    # --- CONTEÚDO DA SIDEBAR ---
+    with st.sidebar:
+        # Logo da Empresa (Uso do st.image para melhor compatibilidade)
+        st.image("https://tecadi.com.br/wp-content/uploads/2024/01/LOGO-HORIZONTAL_BRANCA_p.png.webp", width=200)
+        
+        st.markdown("### ⚙️ PAINEL DE FILTROS")
+        
+        meses_disponiveis = df.sort_values('Mes_Ano_Sort', ascending=False)['Mes_Ano'].unique()
+        mes_filt = st.multiselect("📅 PERÍODO (MÊS/ANO)", options=meses_disponiveis)
+        
+        prod_global_filt = st.multiselect("📦 PRODUTO ESPECÍFICO", options=sorted(df['Produto'].unique()))
+        
+        st.markdown("---")
         
         # Texto de ajuda com cor forçada para branco via HTML/CSS inline
         st.markdown("""
