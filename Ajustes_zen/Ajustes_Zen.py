@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from io import BytesIO
 import requests
+from datetime import datetime  # <--- ADICIONE ESTA LINHA
 
 # 1. Configuração da Página
 st.set_page_config(page_title="TECADI - Acuracidade ZEN", page_icon="🎯", layout="wide")
@@ -153,12 +154,12 @@ elif df is not None:
 
     st.markdown('<div class="dash-header"><div class="dash-title">Balanço de Inventário ZEN</div></div>', unsafe_allow_html=True)
     
-    aba_resumo, aba_faltas, aba_sobras, aba_logs = st.tabs([
-        "📊 Visão Geral", "📉 Faltas Ativas", "📈 Sobras Ativas", "🔍 Consulta de Logs"
-    ])
-
+    aba_resumo, aba_faltas, aba_sobras, aba_logs, aba_auditoria = st.tabs([
+    "📊 Visão Geral", "📉 Faltas Ativas", "📈 Sobras Ativas", "🔍 Consulta de Logs", "🎯 Auditoria de Estoque"
+])
     # --- ABA 1: VISÃO GERAL ---
     with aba_resumo:
+        # (Mantém os cálculos de métricas iniciais iguais...)
         v_sobra_total = df_f[df_f['Qtd_Sinal'] > 0]['Valor (R$)'].sum()
         v_falta_total = df_f[df_f['Qtd_Sinal'] < 0]['Valor (R$)'].sum()
         total_liq = v_sobra_total + v_falta_total
@@ -176,25 +177,74 @@ elif df is not None:
         c5.metric("Falta Ativa (Estoque)", f"R$ -{abs(v_falta_ativa):,.0f}")
 
         st.divider()
-        st.subheader("📈 Histórico de Impacto Acumulado")
-        df_hist = df_f.groupby('Data_Dia')['Valor (R$)'].sum().reset_index().sort_values('Data_Dia')
-        df_hist['Acumulado'] = df_hist['Valor (R$)'].cumsum()
         
-        cor_hist = VERDE_SOBRA if total_liq >= 0 else VERMELHO_FALTA
-        fill_hist = "rgba(46, 125, 50, 0.1)" if total_liq >= 0 else "rgba(211, 47, 47, 0.1)"
+        # --- NOVO RACIONAL: FOTO DO ATIVO POR DATA ---
+        # 1. Pegamos todas as datas únicas
+        datas_eixo = sorted(df_f['Data_Dia'].unique())
+        evolucao_ativo = []
 
-        fig_evolucao = go.Figure()
-        fig_evolucao.add_trace(go.Scatter(
-            x=df_hist['Data_Dia'], y=df_hist['Acumulado'], mode='lines+markers+text',
-            line=dict(color=cor_hist, width=3), fill='tozeroy', fillcolor=fill_hist,
-            text=[f"R$ {v/1000:.1f}k" if i % 5 == 0 else "" for i, v in enumerate(df_hist['Acumulado'])],
+        # 2. Para cada data, calculamos o saldo acumulado de cada SKU/LOCAL até aquele momento
+        for data in datas_eixo:
+            temp_df = df_f[df_f['Data_Dia'] <= data]
+            # Saldo por produto/local até a data X
+            saldo_momento = temp_df.groupby(['Produto', 'Localizacao']).agg({'Qtd_Sinal': 'sum', 'Custo_Unit': 'mean'}).reset_index()
+            saldo_momento['Valor_Ativo'] = saldo_momento['Qtd_Sinal'] * saldo_momento['Custo_Unit']
+            
+            # Somamos o que é sobra e o que é falta naquele exato dia (a "foto")
+            sobra_na_data = saldo_momento[saldo_momento['Qtd_Sinal'] > 0]['Valor_Ativo'].sum()
+            falta_na_data = saldo_momento[saldo_momento['Qtd_Sinal'] < 0]['Valor_Ativo'].sum()
+            saldo_liq_na_data = sobra_na_data + falta_na_data
+            
+            evolucao_ativo.append({
+                'Data': data,
+                'Sobra_Ativa': sobra_na_data,
+                'Falta_Ativa': falta_na_data,
+                'Saldo_Liquido': saldo_liq_na_data
+            })
+
+        df_foto = pd.DataFrame(evolucao_ativo)
+
+        # --- GRÁFICO 1: SALDO LÍQUIDO ATIVO (FOTO) ---
+        st.subheader("📊 Evolução do Saldo Líquido Ativo (Foto do Estoque)")
+        cor_liq = AZUL_TECADI
+        
+        fig_total = go.Figure()
+        fig_total.add_trace(go.Scatter(
+            x=df_foto['Data'], y=df_foto['Saldo_Liquido'], mode='lines+markers+text',
+            line=dict(color=cor_liq, width=3), fill='tozeroy', fillcolor="rgba(29, 86, 155, 0.1)",
+            text=[f"R$ {v/1000:.1f}k" if i % 5 == 0 else "" for i, v in enumerate(df_foto['Saldo_Liquido'])],
             textposition="top center"
         ))
-        fig_evolucao.add_hline(y=0, line_dash="dash", line_color="#333", opacity=0.5)
-        fig_evolucao.update_layout(xaxis_title="Data", yaxis_title="Acumulado (R$)", plot_bgcolor='white')
-        st.plotly_chart(fig_evolucao, use_container_width=True)
+        fig_total.update_layout(xaxis_title="Data", yaxis_title="Saldo Ativo (R$)", plot_bgcolor='white', height=350)
+        st.plotly_chart(fig_total, use_container_width=True)
 
-        st.divider()
+        # --- NOVOS GRÁFICOS LADO A LADO: SOBRA ATIVA E FALTA ATIVA ---
+        col_g1, col_g2 = st.columns(2)
+        
+        with col_g1:
+            st.subheader("📈 Sobra Ativa no Dia (Estoque Real)")
+            fig_sobra = go.Figure()
+            fig_sobra.add_trace(go.Scatter(
+                x=df_foto['Data'], y=df_foto['Sobra_Ativa'], mode='lines+markers+text',
+                line=dict(color=VERDE_SOBRA, width=3), fill='tozeroy', fillcolor="rgba(46, 125, 50, 0.1)",
+                text=[f"R$ {v/1000:.1f}k" if i % 5 == 0 else "" for i, v in enumerate(df_foto['Sobra_Ativa'])],
+                textposition="top center"
+            ))
+            fig_sobra.update_layout(xaxis_title="Data", yaxis_title="Sobra Ativa (R$)", plot_bgcolor='white', height=350)
+            st.plotly_chart(fig_sobra, use_container_width=True)
+
+        with col_g2:
+            st.subheader("📉 Falta Ativa no Dia (Estoque Real)")
+            fig_falta = go.Figure()
+            fig_falta.add_trace(go.Scatter(
+                x=df_foto['Data'], y=df_foto['Falta_Ativa'], mode='lines+markers+text',
+                line=dict(color=VERMELHO_FALTA, width=3), fill='tozeroy', fillcolor="rgba(211, 47, 47, 0.1)",
+                text=[f"R$ {abs(v)/1000:.1f}k" if i % 5 == 0 else "" for i, v in enumerate(df_foto['Falta_Ativa'])],
+                textposition="bottom center"
+            ))
+            fig_falta.update_layout(xaxis_title="Data", yaxis_title="Falta Ativa (R$)", plot_bgcolor='white', height=350)
+            st.plotly_chart(fig_falta, use_container_width=True)
+            st.divider()
         st.subheader("📅 Impacto Financeiro por Dia (Ajustes Brutos)")
         df_dia = df_f.groupby('Data_Dia')['Valor (R$)'].sum().reset_index()
         df_dia['Cor'] = df_dia['Valor (R$)'].apply(lambda x: VERDE_SOBRA if x >= 0 else VERMELHO_FALTA)
@@ -203,6 +253,9 @@ elif df is not None:
         fig_diario.add_trace(go.Bar(x=df_dia['Data_Dia'], y=df_dia['Valor (R$)'], marker_color=df_dia['Cor'], text=df_dia['Valor (R$)'].apply(lambda x: f"R$ {x/1000:.1f}k"), textposition='auto'))
         fig_diario.update_layout(xaxis_title="Data", yaxis_title="Valor (R$)", plot_bgcolor='white', height=400)
         st.plotly_chart(fig_diario, use_container_width=True)
+
+        st.divider()
+        # ... (Gráfico de barras diário continua abaixo se desejar manter)
 
     # --- ABA 2: FALTAS ATIVAS ---
     with aba_faltas:
@@ -291,3 +344,73 @@ elif df is not None:
                 "Custo Unit.": st.column_config.NumberColumn("Custo Unit.", format="R$ %.2f")
             }
         )
+# --- ABA 5: AUDITORIA DE ESTOQUE ---
+    with aba_auditoria:
+        st.subheader("🎯 Gerador de Relatório de Auditoria")
+        st.markdown("Selecione os parâmetros e clique em **'Gerar Relatório'**.")
+        
+        col_au1, col_au2, col_au3 = st.columns([2, 1, 1])
+        with col_au1:
+            up_saldo = st.file_uploader("Suba o arquivo de Saldo de Estoque (Excel)", type=['xlsx'], key="audit_upload")
+        with col_au2:
+            top_n = st.number_input("SKUs (Top N Valor):", min_value=1, max_value=200, value=10)
+        with col_au3:
+            tipo_auditoria = st.radio("Foco:", ["Faltas (Prejuízo)", "Sobras (Excesso)"])
+
+        btn_processar = st.button("🚀 Gerar Relatório de Auditoria", use_container_width=True)
+
+        if up_saldo and btn_processar:
+            try:
+                with st.spinner("Cruzando dados..."):
+                    # 1. Carrega o saldo e padroniza colunas para MAIÚSCULO
+                    df_estoque_user = pd.read_excel(up_saldo)
+                    df_estoque_user.columns = [str(c).upper().strip() for c in df_estoque_user.columns]
+                    
+                    # 2. Identifica os Top SKUs no Dashboard
+                    df_resumo = df_f.groupby('Produto').agg({'Qtd_Sinal': 'sum', 'Valor (R$)': 'sum'}).reset_index()
+                    
+                    if tipo_auditoria == "Faltas (Prejuízo)":
+                        top_skus = df_resumo[df_resumo['Qtd_Sinal'] < 0].sort_values('Valor (R$)', ascending=True).head(top_n)
+                    else:
+                        top_skus = df_resumo[df_resumo['Qtd_Sinal'] > 0].sort_values('Valor (R$)', ascending=False).head(top_n)
+
+                    lista_skus = top_skus['Produto'].tolist()
+
+                    # 3. Cruzamento (Filtra o estoque do usuário pelos produtos do Dash)
+                    # Note que agora usamos 'PRODUTO' em maiúsculo
+                    df_resultado = df_estoque_user[df_estoque_user['PRODUTO'].isin(lista_skus)].copy()
+                    
+                    # Unimos com os dados de desvio (Qtd e Valor)
+                    df_resultado = pd.merge(df_resultado, top_skus[['Produto', 'Qtd_Sinal', 'Valor (R$)']], left_on='PRODUTO', right_on='Produto', how='left')
+
+                    # 4. Seleção de Colunas Finais (Ajustado para maiúsculas)
+                    # Ajuste aqui os nomes conforme aparecem no seu relatório de saldo original
+                    colunas_finais = ['LOCALIZACAO', 'PRODUTO', 'SALDO', 'SALDO BLOQUEADO', 'Qtd_Sinal', 'Valor (R$)']
+                    
+                    existentes = [c for c in colunas_finais if c in df_resultado.columns]
+                    df_final_export = df_resultado[existentes].copy()
+                    
+                    df_final_export = df_final_export.rename(columns={
+                        'Qtd_Sinal': 'DESVIO_DASH_PC',
+                        'Valor (R$)': 'IMPACTO_FINANC_RS'
+                    })
+
+                    # 5. Download usando engine padrão (sem xlsxwriter para evitar erros)
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df_final_export.to_excel(writer, index=False, sheet_name='Lista_Auditoria')
+
+                    st.success(f"✅ Relatório gerado! {len(df_final_export)} endereços encontrados para auditoria.")
+
+                    st.download_button(
+                        label="📥 BAIXAR ARQUIVO DE AUDITORIA",
+                        data=output.getvalue(),
+                        file_name=f"Auditoria_TECADI_{datetime.now().strftime('%d_%m_%H%M')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+
+            except Exception as e:
+                st.error(f"Erro no processamento: {e}. Verifique se o arquivo de Saldo possui a coluna 'PRODUTO'.")
+        elif not up_saldo and btn_processar:
+            st.warning("⚠️ Selecione um arquivo de Saldo antes de clicar em processar.")
