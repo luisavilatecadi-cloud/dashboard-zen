@@ -171,22 +171,37 @@ if df is not None:
     # --- ABAS ANALÍTICAS ---
     tab_rs, tab_pc = st.tabs(["💰 Análise Financeira (R$)", "📦 Análise Quantitativa (PÇ)"])
 
-    # ABA R$
+# ABA R$
     with tab_rs:
         col1, col2 = st.columns([2, 1])
         with col1:
             st.subheader("Evolução Diária do Prejuízo")
-            df_v = df_f.groupby('DATA_PROCESSADA')['Valor_Corte'].sum().reset_index()
-            fig_evol_v = px.line(df_v, x='DATA_PROCESSADA', y='Valor_Corte', color_discrete_sequence=[AZUL_TECADI])
-            fig_evol_v.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Data", yaxis_title="R$")
-            st.plotly_chart(fig_evol_v, use_container_width=True)
+            df_v = df_f.groupby('DATA_PROCESSADA')['Valor_Corte'].sum().reset_index().sort_values('DATA_PROCESSADA')
             
-            st.subheader("Evolução Consolidada (Acumulado R$)")
-            df_v_sorted = df_v.sort_values('DATA_PROCESSADA')
-            df_v_sorted['Corte_Acumulado'] = df_v_sorted['Valor_Corte'].cumsum()
-            fig_v_acum = px.area(df_v_sorted, x='DATA_PROCESSADA', y='Corte_Acumulado', color_discrete_sequence=[AZUL_CLARO_TECADI])
-            fig_v_acum.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Data", yaxis_title="R$ Acumulado")
-            st.plotly_chart(fig_v_acum, use_container_width=True)
+            # --- CRIAÇÃO DO GRÁFICO COM RÓTULOS #K ---
+            fig_evol_v = go.Figure()
+            fig_evol_v.add_trace(go.Scatter(
+                x=df_v['DATA_PROCESSADA'], 
+                y=df_v['Valor_Corte'],
+                mode='lines+markers+text', # Ativa linha, pontos e texto
+                name='Prejuízo',
+                line=dict(color=AZUL_TECADI, width=3),
+                marker=dict(size=8),
+                # Formata o texto: Divide por 1000 e adiciona o 'k'
+                text=[f"{v/1000:.1f}k" if v > 0 else "" for v in df_v['Valor_Corte']],
+                textposition="top center",
+                textfont=dict(size=10, color=AZUL_ESCURO)
+            ))
+
+            fig_evol_v.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Data",
+                yaxis_title="R$",
+                margin=dict(l=0, r=0, t=30, b=0),
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor='#EEE')
+            )
+            st.plotly_chart(fig_evol_v, use_container_width=True)
         
         with col2:
             st.subheader("Top 10 SKUs (R$)")
@@ -196,14 +211,36 @@ if df is not None:
             fig_top_v.update_layout(yaxis={'categoryorder':'total ascending'}, plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_top_v, use_container_width=True)
 
-    # ABA PÇ
+   # ABA PÇ
     with tab_pc:
         col1, col2 = st.columns([2, 1])
         with col1:
             st.subheader("Evolução Diária de Peças")
-            df_q = df_f.groupby('DATA_PROCESSADA')['QTD_CORTE'].sum().reset_index()
-            fig_evol_q = px.line(df_q, x='DATA_PROCESSADA', y='QTD_CORTE', color_discrete_sequence=[AZUL_TECADI])
-            fig_evol_q.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Data", yaxis_title="PÇ")
+            df_q = df_f.groupby('DATA_PROCESSADA')['QTD_CORTE'].sum().reset_index().sort_values('DATA_PROCESSADA')
+            
+            # --- CRIAÇÃO DO GRÁFICO DE PEÇAS COM RÓTULOS #K ---
+            fig_evol_q = go.Figure()
+            fig_evol_q.add_trace(go.Scatter(
+                x=df_q['DATA_PROCESSADA'], 
+                y=df_q['QTD_CORTE'],
+                mode='lines+markers+text', # Linha, pontos e rótulos
+                name='Peças Cortadas',
+                line=dict(color=AZUL_TECADI, width=3),
+                marker=dict(size=8),
+                # Formata o texto: Se for acima de 1000, mostra #.#k, senão mostra o valor cheio
+                text=[f"{v/1000:.1f}k" if v >= 1000 else f"{v:.0f}" for v in df_q['QTD_CORTE']],
+                textposition="top center",
+                textfont=dict(size=10, color=AZUL_ESCURO)
+            ))
+
+            fig_evol_q.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Data",
+                yaxis_title="Quantidade (PÇ)",
+                margin=dict(l=0, r=0, t=30, b=0),
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor='#EEE')
+            )
             st.plotly_chart(fig_evol_q, use_container_width=True)
             
             st.subheader("Evolução Consolidada (Acumulado PÇ)")
