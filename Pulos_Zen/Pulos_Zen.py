@@ -7,7 +7,7 @@ import requests
 from io import BytesIO
 
 # 1. Configuração da Página
-st.set_page_config(page_title="TECADI - Análise de Pulos", page_icon="📊", layout="wide")
+st.set_page_config(page_title="TECADI - Análise de Pulos", page_icon="🦘", layout="wide")
 
 # ---------------------------------------------------------
 # 2. ESTILO E CORES PADRÃO TECADI
