@@ -156,7 +156,7 @@ with col3:
     st.markdown(f"""
         <div class="netflix-card">
             <a href="https://acuracidade-zen-pulos.streamlit.app/" target="_blank" class="full-card-link"></a>
-            <div class="card-banner">📊</div>
+            <div class="card-banner">🦘</div>
             <div class="card-content">
                 <div class="card-title-text">Análise de Pulos</div>
                 <div class="card-desc">Monitoramento de produtividade e recorrência de endereços (Pulos Reais).</div>
