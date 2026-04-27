@@ -64,7 +64,7 @@ st.markdown(f"""
 # Link do OneDrive ajustado para download direto
 URL_DATA = "https://tecadi-my.sharepoint.com/:x:/g/personal/luis_avila_tecadi_com_br/IQBdA_Yt563JR4yERPu4o5NwAc0XmKnxbR6NrGQehUHQ35k?download=1"
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def load_and_process_data(url):
     try:
         response = requests.get(url)
