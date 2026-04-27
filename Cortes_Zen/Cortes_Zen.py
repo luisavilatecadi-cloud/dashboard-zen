@@ -83,7 +83,7 @@ st.markdown(f"""
 # 3. MOTOR DE DADOS
 # ---------------------------------------------------------
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=60)
 def load_data():
     url_cmp = "https://tecadi-my.sharepoint.com/:x:/g/personal/luis_avila_tecadi_com_br/IQBpY04fnUXVQanV1HmDAdMsARKUwfgvQAXZZYf0rWhv2t0?download=1"
     url_cortes = "https://tecadi-my.sharepoint.com/:x:/g/personal/luis_avila_tecadi_com_br/IQDLjMQfLyv9S4OOTJtwcU1tAVwF1nq8EGvzlOjKejbdn-o?download=1"
