@@ -169,7 +169,7 @@ if df is not None:
     st.divider()
 
     # --- ABAS ANALÍTICAS ---
-    tab_rs, tab_pc = st.tabs(["💰 Análise Financeira (R$)", "📦 Análise Quantitativa (PÇ)"])
+    tab_rs, tab_pc, tab_sku,tab_ped = st.tabs(["💰 Análise Financeira (R$)", "📦 Análise Quantitativa (PÇ)", "🆔 SKU (Diversidade)", "🚚 Análise de Pedidos"])
 
 # ABA R$
     with tab_rs:
@@ -257,8 +257,138 @@ if df is not None:
                                color_discrete_sequence=[AZUL_ESCURO], text_auto='.0f')
             fig_top_q.update_layout(yaxis={'categoryorder':'total ascending'}, plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_top_q, use_container_width=True)
+    # ABA SKU (Quantidade de Códigos Únicos)
+    with tab_sku:
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.subheader("Evolução Diária de Diversidade (SKUs)")
+            # Agrupamento por data contando valores únicos de COD_PRODUTO
+            df_sku_evol = df_f.groupby('DATA_PROCESSADA')['COD_PRODUTO'].nunique().reset_index().sort_values('DATA_PROCESSADA')
+            df_sku_evol.columns = ['DATA_PROCESSADA', 'QTD_SKU_UNICO']
+            
+            # --- CRIAÇÃO DO GRÁFICO DE SKUs ---
+            fig_evol_sku = go.Figure()
+            fig_evol_sku.add_trace(go.Scatter(
+                x=df_sku_evol['DATA_PROCESSADA'], 
+                y=df_sku_evol['QTD_SKU_UNICO'],
+                mode='lines+markers+text',
+                name='SKUs Únicos',
+                line=dict(color=AZUL_TECADI, width=3),
+                marker=dict(size=8),
+                text=[f"{v:.0f}" for v in df_sku_evol['QTD_SKU_UNICO']],
+                textposition="top center",
+                textfont=dict(size=10, color=AZUL_ESCURO)
+            ))
 
+            fig_evol_sku.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Data",
+                yaxis_title="Qtd de SKUs Distintos",
+                margin=dict(l=0, r=0, t=30, b=0),
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor='#EEE')
+            )
+            st.plotly_chart(fig_evol_sku, use_container_width=True)
+            
+            # Gráfico de barras por dia para facilitar a leitura da "largura" do corte
+            st.subheader("Concentração de SKUs por Dia")
+            fig_bar_sku = px.bar(df_sku_evol, x='DATA_PROCESSADA', y='QTD_SKU_UNICO', 
+                                 color_discrete_sequence=[AZUL_CLARO_TECADI])
+            fig_bar_sku.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Data", yaxis_title="SKUs")
+            st.plotly_chart(fig_bar_sku, use_container_width=True)
+        
+        with col2:
+            st.subheader("Top 10 Datas com mais Variedade")
+            # Seleciona os 10 dias com mais SKUs
+            top_datas_sku = df_sku_evol.nlargest(10, 'QTD_SKU_UNICO').copy()
+            
+            # Formata a data para String (remove a hora e inverte para formato BR)
+            top_datas_sku['DATA_STR'] = top_datas_sku['DATA_PROCESSADA'].dt.strftime('%d/%m/%Y')
+            
+            fig_top_datas = px.bar(
+                top_datas_sku, 
+                x='QTD_SKU_UNICO', 
+                y='DATA_STR', # Usamos a nova coluna formatada
+                orientation='h',
+                color_discrete_sequence=[AZUL_ESCURO], 
+                text_auto=True
+            )
+            
+            fig_top_datas.update_layout(
+                yaxis={'categoryorder':'total ascending'}, # Ordena pelo valor
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Qtd SKUs",
+                yaxis_title=None,
+                margin=dict(l=0, r=0, t=30, b=0)
+            )
+            
+            st.plotly_chart(fig_top_datas, use_container_width=True)
+    # ABA PEDIDOS (Quantidade de Pedidos Únicos)
+    with tab_ped:
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.subheader("Evolução Diária de Pedidos com Corte")
+            # Agrupamento por data contando Pedidos únicos
+            df_ped_evol = df_f.groupby('DATA_PROCESSADA')['Pedido Cliente'].nunique().reset_index().sort_values('DATA_PROCESSADA')
+            df_ped_evol.columns = ['DATA_PROCESSADA', 'QTD_PED_UNICO']
+            
+            # --- GRÁFICO DE EVOLUÇÃO ---
+            fig_evol_ped = go.Figure()
+            fig_evol_ped.add_trace(go.Scatter(
+                x=df_ped_evol['DATA_PROCESSADA'], 
+                y=df_ped_evol['QTD_PED_UNICO'],
+                mode='lines+markers+text',
+                name='Pedidos',
+                line=dict(color=AZUL_TECADI, width=3),
+                marker=dict(size=8),
+                text=[f"{v:.0f}" for v in df_ped_evol['QTD_PED_UNICO']],
+                textposition="top center",
+                textfont=dict(size=10, color=AZUL_ESCURO)
+            ))
+
+            fig_evol_ped.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Data",
+                yaxis_title="Qtd de Pedidos Únicos",
+                margin=dict(l=0, r=0, t=30, b=0),
+                xaxis=dict(showgrid=False),
+                yaxis=dict(showgrid=True, gridcolor='#EEE')
+            )
+            st.plotly_chart(fig_evol_ped, use_container_width=True)
+            
+            # Gráfico de Área para Volume Acumulado de Pedidos no período
+            st.subheader("Pedidos Afetados (Acumulado no Período)")
+            df_ped_evol['PED_ACUM'] = df_ped_evol['QTD_PED_UNICO'].cumsum()
+            fig_ped_acum = px.area(df_ped_evol, x='DATA_PROCESSADA', y='PED_ACUM', 
+                                   color_discrete_sequence=[AZUL_CLARO_TECADI])
+            fig_ped_acum.update_layout(plot_bgcolor='rgba(0,0,0,0)', xaxis_title="Data", yaxis_title="Pedidos Acumulados")
+            st.plotly_chart(fig_ped_acum, use_container_width=True)
+        
+        with col2:
+            st.subheader("Top 10 Datas (Volume de Pedidos)")
+            top_datas_ped = df_ped_evol.nlargest(10, 'QTD_PED_UNICO').copy()
+            
+            # Formatação de data sem horas para o eixo Y
+            top_datas_ped['DATA_STR'] = top_datas_ped['DATA_PROCESSADA'].dt.strftime('%d/%m/%Y')
+            
+            fig_top_ped = px.bar(
+                top_datas_ped, 
+                x='QTD_PED_UNICO', 
+                y='DATA_STR',
+                orientation='h',
+                color_discrete_sequence=[AZUL_ESCURO], 
+                text_auto=True
+            )
+            
+            fig_top_ped.update_layout(
+                yaxis={'categoryorder':'total ascending'},
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Nº de Pedidos",
+                yaxis_title=None
+            )
+            st.plotly_chart(fig_top_ped, use_container_width=True)
     st.divider()
+    
     
 
     # --- RECORRÊNCIA ---
